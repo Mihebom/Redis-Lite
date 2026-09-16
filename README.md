@@ -1,4 +1,4 @@
-<h1>Redis Lite Clone</h1>
+<h1>Redis Lite (Java)</h1>
 
 <h2>Description</h2>
 A lightweight Redis clone built in Java. RESP protocol-compatible (connect with redis-cli), multi-threaded server, with a ConcurrentHashMap-backed store and linked-list-powered list operations, including recent commands like LMOVEM.<br />
