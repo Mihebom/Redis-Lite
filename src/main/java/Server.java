@@ -840,43 +840,6 @@ public class Server {
     }
 
 
-//    public void commandDelete(String command, DataOutputStream dos) throws IOException {
-//
-//        String[] data = command.split(" ");
-//
-//        String key = "";
-//
-//        AtomicInteger count = new AtomicInteger(0);
-//
-//        if(!(data.length >= 2)){
-//            dos.write("-ERR no keys received\r\n".getBytes());
-//            return;
-//        }
-//
-//
-//        for(int i = 1; i < data.length; i++){
-//
-//
-//
-//            database.compute(data[i], (k,v) -> {
-//
-//                if(v == null) {
-//                    return null;
-//                }
-//                expiryCache.remove(k);
-//
-//                count.incrementAndGet();
-//
-//                return null;
-//
-//            });
-//
-//        }
-//
-//
-//        dos.write((":" + count + "\r\n").getBytes());
-//
-//    }
     public void commandDelete(String command, DataOutputStream dos) throws IOException {
 
         String[] data = command.split(" ");
@@ -1430,15 +1393,15 @@ public class Server {
 
         try{
 
-            if(!database.containsKey(key1)){
+            if(!(database.containsKey(srcKey) && database.containsKey(destKey))){
                 dos.write("$0\r\n\r\n".getBytes(StandardCharsets.UTF_8));
                 return;
             }
 
-            Value v1 = database.get(key1);
-            Value v2 = database.get(key2);
+            Value v1 = database.get(srcKey);
+            Value v2 = database.get(destKey);
 
-            if(!"LIST".equals(v1.getType()) && "LIST".equals(v2.getType())){
+            if(!("LIST".equals(v1.getType()) && "LIST".equals(v2.getType()))){
                 dos.write("-ERR values must be of LIST type\r\n".getBytes(StandardCharsets.UTF_8));
                 return;
             }
@@ -1501,12 +1464,11 @@ public class Server {
     }
 
     //multiple-element version of LMOVE
-    //Work on element ordering tomorrow
     public void commandLMOVEM(String command, DataOutputStream dos) throws IOException {
 
         String[] data = command.split(" ");
 
-        AtomicReference<String> res = new AtomicReference<>("");
+        String res = "";
 
         if(data.length != 5 && data.length != 8){
             dos.write("-ERR invalid arguments\r\n".getBytes(StandardCharsets.UTF_8));
@@ -1526,50 +1488,70 @@ public class Server {
         //Where To LEFT/RIGHT for dest
         String whereTo = data[4];
 
+        String key1 = "",key2 = "";
+        ReentrantLock keyLock1 = null, keyLock2 = null;
+
+        //Alphabetical locking order for keys to prevent deadlock
+
+        int comp = srcKey.compareTo(destKey);
+
+        if(comp == 0){
+            keyLock1 = getLock(srcKey);
+        } else {
+
+            key1 = comp < 0 ? srcKey : destKey;
+            key2 = comp < 0 ? destKey : srcKey;
+
+            keyLock1 = getLock(key1);
+            keyLock2 = getLock(key2);
+        }
 
 
-        database.compute(srcKey,(k,v) ->{
+        keyLock1.lock();
+        if(keyLock2 != null)
+            keyLock2.lock();
 
-            if(v == null){
-                res.set("$0\r\n\r\n");
-                return null;
+        try {
+
+            if(!(database.containsKey(srcKey) && database.containsKey(destKey))){
+                dos.write("$0\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
             }
 
-            if(!"LIST".equals(v.getType())){
-                res.set("$3\r\nnil\r\n");
-                return v;
-            }
+            Value v1 = database.get(srcKey);
+            Value v2 = database.get(destKey);
 
-            Value temp = null;
+            if(!("LIST".equals(v1.getType()) && "LIST".equals(v2.getType()))){
+                dos.write("-ERR values must be of LIST type\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
 
             LinkedList<String> src;
 
             LinkedList<String> dest;
 
+
             if(srcKey.equals(destKey)){
-                src = v.getList();
-                dest = v.getList();
+                src = v1.getList();
+                dest = v1.getList();
             } else {
-                temp = database.get(destKey);
-                if(!"LIST".equals(temp.getType())){
-                    res.set("$3\r\nnil\r\n");
-                    return v;
-                }
-                src = v.getList();
-                dest = temp.getList();
+                src = v1.getList();
+                dest = v2.getList();
             }
 
             if(hasOptional.get()){
                 try {
                     //execute the LMOVEM functionality using optional arguments
-                    res.set(executeOptional(src,dest,whereFrom,whereTo,data));
+                    res = executeOptional(src,dest,whereFrom,whereTo,data);
+                    dos.write(res.getBytes(StandardCharsets.UTF_8));
+                    return;
                 } catch (Exception e){
-                    res.set("-ERR something went wrong\r\n");
+                    dos.write("-ERR something went wrong\r\n".getBytes(StandardCharsets.UTF_8));
+                    return;
                 }
-                return v;
             }
 
-            //If there are no optional arguments execute the default LMOVE functionality
+
             String srcElem = "";
 
             StringBuilder builder = new StringBuilder();
@@ -1580,8 +1562,8 @@ public class Server {
             } else if ("RIGHT".equals(whereFrom)){
                 srcElem = src.removeLast();
             } else {
-                res.set("-ERR invalid argument\r\n");
-                return v;
+                dos.write("-ERR invalid argument\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
             }
 
             if("LEFT".equals(whereTo)){
@@ -1589,9 +1571,12 @@ public class Server {
             } else if ("RIGHT".equals(whereTo)){
                 dest.addLast(srcElem);
             } else {
-                res.set("-ERR invalid argument\r\n");
-                return v;
+                dos.write("-ERR invalid argument\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
             }
+
+            v1.setList(src);
+            v2.setList(dest);
 
             builder.append('*')
                     .append(1)
@@ -1605,13 +1590,20 @@ public class Server {
                     .append('\r')
                     .append('\n');
 
-            res.set(builder.toString());
+            res = builder.toString();
 
-            return v;
-        });
+        } finally {
+
+            keyLock1.unlock();
+
+            if(keyLock2 != null)
+                keyLock2.unlock();
+        }
 
 
-        dos.write(res.get().getBytes(StandardCharsets.UTF_8));
+
+
+        dos.write(res.getBytes(StandardCharsets.UTF_8));
 
     }
 
@@ -1716,7 +1708,6 @@ public class Server {
         return res;
     }
 
-
     //Expiry Functions
     private void setExpiry(String key, long expireTime, String option) throws IOException {
 
@@ -1794,9 +1785,7 @@ public class Server {
     }
 
 
-    //Lock Functions
-    //If a lock has been assigned to a key, simply return it
-    // if not create a lock, assign it to the key and return it
+    //Assigns a lock to a key, is persistent throughout the server
     private ReentrantLock getLock(String key){
 
         return locks.computeIfAbsent(key,(k -> new ReentrantLock()));
