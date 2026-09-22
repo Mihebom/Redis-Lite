@@ -33,33 +33,35 @@ public class TestClass {
 //
 //        System.out.println(lcs[str1][str2]);
 
-        int count = 3;
+        System.out.println((2 == 3 || 1 == 4));
 
-        ArrayList<String> elems = new ArrayList<>();
-
-        LinkedList<String> test = new LinkedList<>();
-        test.add("a");
-        test.add("b");
-        test.add("c");
-        test.add("d");
-
-
-        LinkedList<String> test1 = new LinkedList<>();
-
-        for(int i = 0; i < count; i++){
-
-            String temp = test.removeFirst();
-            elems.add(temp);
-        }
-
-        test1.addAll(elems);
-
-        System.out.println("TEST:");
-        test.forEach(System.out::println);
-        System.out.println("TEST1:");
-        test1.forEach(System.out::println);
-        System.out.println("ELEMS:");
-        elems.forEach(System.out::println);
+//        int count = 3;
+//
+//        ArrayList<String> elems = new ArrayList<>();
+//
+//        LinkedList<String> test = new LinkedList<>();
+//        test.add("a");
+//        test.add("b");
+//        test.add("c");
+//        test.add("d");
+//
+//
+//        LinkedList<String> test1 = new LinkedList<>();
+//
+//        for(int i = 0; i < count; i++){
+//
+//            String temp = test.removeFirst();
+//            elems.add(temp);
+//        }
+//
+//        test1.addAll(elems);
+//
+//        System.out.println("TEST:");
+//        test.forEach(System.out::println);
+//        System.out.println("TEST1:");
+//        test1.forEach(System.out::println);
+//        System.out.println("ELEMS:");
+//        elems.forEach(System.out::println);
     }
 
 

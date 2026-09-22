@@ -20,6 +20,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class Server {
 
@@ -61,6 +62,8 @@ public class Server {
     private ConcurrentHashMap<String,String> expiryCache;
 
     private BufferedReader in;
+
+    private ConcurrentHashMap<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
     public Server(int port) throws IOException {
 
@@ -538,7 +541,6 @@ public class Server {
 
         Value val = null;
 
-        try{
 
 
 
@@ -549,45 +551,43 @@ public class Server {
 
                 key = data[1];
 
-                val = database.compute(key,(k,v) -> {
-                    try {
-                        return createValue(k, data);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
+                //Get the lock associated with key
+                ReentrantLock keyLock = getLock(key);
+
+                //Lock access to the key, only one thread can work on this key at a time
+                keyLock.lock();
+                try {
+
+                    val = createValue(key,data);
+
+                    if(val != null) {
+                        database.put(key,val);
+                        res = "+OK\r\n";
+                    }  else {
+                        res = "-ERR something went wrong!\r\n";
                     }
 
-                });
-
-                if(val != null) {
-                    res = "+OK\r\n";
-                }  else {
-                    res = "-ERR something went wrong!\r\n";
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    res = ("-ERR " + "something went wrong please revise command" + "\r\n");
+                } finally {
+                    //Whether or not the thread passess, release the lock to prevent deadlock scenario
+                    keyLock.unlock();
                 }
+
+
 
 
             } else {
                 res = "-ERR invalid command\r\n";
             }
 
-        } catch (Exception e){
-            e.printStackTrace();
-            res = ("-ERR " + "something went wrong please revise command" + "\r\n");
-        }
 
-//        System.out.println("database");
-//        database.entrySet().forEach(entry -> {
-//            System.out.println(entry.getKey() + ": " + entry.getValue());
-//        });
-//
-//        System.out.println("expiryCache");
-//        expiryCache.entrySet().forEach(entry -> {
-//            System.out.println(entry.getKey() + ": " + entry.getValue());
-//        });
-//
-//        System.out.println("Current Time:" + System.currentTimeMillis()/1000);
 
         dos.write(res.getBytes());
     }
+
+
 
     public void commandGet(String command, DataOutputStream dos) throws IOException {
 
@@ -609,36 +609,30 @@ public class Server {
             key = data[1];
         }
 
+        Value value = null;
 
+        ReentrantLock keyLock = getLock(key);
 
-        Value value = database.compute(key,(k,v) -> {
+        keyLock.lock();
+        try {
+            value = database.get(key);
 
-            if(v == null) {
-                return null;
+            if (value == null) {
+                res = "+nil\r\n";
+                dos.write(res.getBytes());
+                return;
             }
 
-            //check if the key exists in the expiryCache, if so check if it has expired
-            //delete and return nil if true, return the value if not
-            if(checkExpiry(k)){
-                expiryCache.remove(k);
-                return null;
-            }
+            if ("STRING".equals(value.getType())) {
 
+                if (checkExpiry(key)) {
+                    expiryCache.remove(key);
+                    res = "+nil\r\n";
+                    dos.write(res.getBytes());
+                    return;
+                }
 
-
-            return v;
-        });
-
-
-
-        if(value == null) {
-            res = "+nil\r\n";
-            dos.write(res.getBytes());
-            return;
-        }
-
-            if("STRING".equals(value.getType())){
-                System.out.println("Value: "+ value);
+                System.out.println("Value: " + value);
                 str.append('$')
                         .append(value.getValue().length())
                         .append('\r')
@@ -654,6 +648,9 @@ public class Server {
                 return;
             }
 
+        } finally {
+            keyLock.unlock();
+        }
 
 
 
@@ -664,20 +661,34 @@ public class Server {
 
         String[] data = command.split(" ");
 
+        String key = "";
+
         if(!(data.length >= 2)){
             dos.write("-ERR no keys received\r\n".getBytes());
             return;
         }
 
-        AtomicInteger count = new AtomicInteger(0);
+        int count = 0;
 
         for(int i = 1; i < data.length; i++){
 
 
-            database.computeIfPresent(data[i], (k,v) -> {
-                count.getAndIncrement();
-                return v;
-            });
+            key = data[i];
+
+            ReentrantLock keyLock = getLock(data[i]);
+
+
+            keyLock.lock();
+            try {
+
+                if(database.containsKey(key)){
+                    count++;
+                }
+
+            } finally {
+                keyLock.unlock();
+            }
+
 
 
         }
@@ -688,14 +699,18 @@ public class Server {
 
     }
 
+
+
     public void commandIncrement(String command, DataOutputStream dos) throws IOException {
 
 
         String[] data = command.split(" ");
 
-        AtomicInteger res = new AtomicInteger(0);
+        int res = 0;
 
         String key = "";
+
+        Value val = null;
 
         if(data.length != 2){
             dos.write("-ERR invalid command execution\r\n".getBytes());
@@ -705,34 +720,46 @@ public class Server {
         key =  data[1];
 
         try {
-            database.compute(key, (k, v) -> {
 
-                if (checkExpiry(k)) {
-                    expiryCache.remove(k);
-                    return null;
+            ReentrantLock keyLock = getLock(key);
+
+            keyLock.lock();
+            try {
+                if (checkExpiry(key)) {
+                    expiryCache.remove(key);
+                    dos.write("+nil\r\n".getBytes(StandardCharsets.UTF_8));
+                    return;
                 }
 
-                if (v == null) {
-                    v = new Value();
-                    //set type to string
-                    v.setType("STRING");
-                    v.setValue(String.valueOf(res.incrementAndGet()));
-                    return v;
+                if (database.containsKey(key)) {
+
+                    val = database.get(key);
+
+                    if (!"STRING".equals(val.getType())) {
+                        dos.write("-ERR cannot increment non integer\r\n".getBytes());
+                        return;
+                    } else {
+                        res = Integer.parseInt(val.getValue());
+                        res++;
+                        val.setValue(String.valueOf(res));
+
+
+                    }
+
+
+                } else {
+
+                    val = new Value();
+                    val.setType("STRING");
+                    res++;
+                    val.setValue(String.valueOf(res));
+                    database.put(key,val);
+
                 }
+            } finally {
+                keyLock.unlock();
+            }
 
-
-                String num = v.getValue();
-
-                res.set(Integer.parseInt(num));
-
-                v.setValue(String.valueOf(res.incrementAndGet()));
-
-
-                System.out.println("In DB:" + v.getValue());
-
-
-                return v;
-            });
         } catch (Exception e) {
             dos.write("-ERR cannot increment non integer\r\n".getBytes());
             return;
@@ -748,9 +775,11 @@ public class Server {
 
         String[] data = command.split(" ");
 
-        AtomicInteger res = new AtomicInteger(0);
+        int res = 0;
 
         String key = "";
+
+        Value val = null;
 
         if(data.length != 2){
             dos.write("-ERR invalid command execution\r\n".getBytes());
@@ -760,34 +789,46 @@ public class Server {
         key =  data[1];
 
         try {
-            database.compute(key, (k, v) -> {
 
-                if (checkExpiry(k)) {
-                    expiryCache.remove(k);
-                    return null;
+            ReentrantLock keyLock = getLock(key);
+
+            keyLock.lock();
+            try {
+                if (checkExpiry(key)) {
+                    expiryCache.remove(key);
+                    dos.write("+nil\r\n".getBytes(StandardCharsets.UTF_8));
+                    return;
                 }
 
-                if (v == null) {
-                    v = new Value();
-                    //set type to string
-                    v.setType("STRING");
-                    v.setValue(String.valueOf(res.decrementAndGet()));
-                    return v;
+                if (database.containsKey(key)) {
+
+                    val = database.get(key);
+
+                    if (!"STRING".equals(val.getType())) {
+                        dos.write("-ERR cannot decrement non integer\r\n".getBytes());
+                        return;
+                    } else {
+                        res = Integer.parseInt(val.getValue());
+                        res--;
+                        val.setValue(String.valueOf(res));
+
+
+                    }
+
+
+                } else {
+
+                    val = new Value();
+                    val.setType("STRING");
+                    res--;
+                    val.setValue(String.valueOf(res));
+                    database.put(key,val);
+
                 }
+            } finally {
+                keyLock.unlock();
+            }
 
-
-                String num = v.getValue();
-
-                res.set(Integer.parseInt(num));
-
-                v.setValue(String.valueOf(res.decrementAndGet()));
-
-
-                System.out.println("In DB:" + v.getValue());
-
-
-                return v;
-            });
         } catch (Exception e) {
             dos.write("-ERR cannot decrement non integer\r\n".getBytes());
             return;
@@ -798,11 +839,51 @@ public class Server {
 
     }
 
+
+//    public void commandDelete(String command, DataOutputStream dos) throws IOException {
+//
+//        String[] data = command.split(" ");
+//
+//        String key = "";
+//
+//        AtomicInteger count = new AtomicInteger(0);
+//
+//        if(!(data.length >= 2)){
+//            dos.write("-ERR no keys received\r\n".getBytes());
+//            return;
+//        }
+//
+//
+//        for(int i = 1; i < data.length; i++){
+//
+//
+//
+//            database.compute(data[i], (k,v) -> {
+//
+//                if(v == null) {
+//                    return null;
+//                }
+//                expiryCache.remove(k);
+//
+//                count.incrementAndGet();
+//
+//                return null;
+//
+//            });
+//
+//        }
+//
+//
+//        dos.write((":" + count + "\r\n").getBytes());
+//
+//    }
     public void commandDelete(String command, DataOutputStream dos) throws IOException {
 
         String[] data = command.split(" ");
 
-        AtomicInteger count = new AtomicInteger(0);
+        String key = "";
+
+        int count = 0;
 
         if(!(data.length >= 2)){
             dos.write("-ERR no keys received\r\n".getBytes());
@@ -813,18 +894,20 @@ public class Server {
         for(int i = 1; i < data.length; i++){
 
 
-            database.compute(data[i], (k,v) -> {
+            key = data[i];
+            ReentrantLock keyLock = getLock(key);
 
-                if(v == null) {
-                    return null;
+            keyLock.lock();
+            try {
+                if (database.containsKey(key)) {
+                    database.remove(key);
+                    expiryCache.remove(key);
+                    count++;
                 }
-                expiryCache.remove(k);
+            } finally {
+                keyLock.unlock();
+            }
 
-                count.incrementAndGet();
-
-                return null;
-
-            });
 
         }
 
@@ -839,23 +922,23 @@ public class Server {
 
         StringBuilder builder = new StringBuilder();
 
-        AtomicReference<String> res = new AtomicReference<>("");
+        String res = "";
 
-        AtomicReference<LinkedList<String>> list = new AtomicReference<>();
+        LinkedList<String> list = new LinkedList<>();
 
         String key = "";
 
-        AtomicInteger start = new AtomicInteger();
+        Value val = null;
 
-        AtomicInteger end = new AtomicInteger();
+        int start = 0;
 
-        AtomicInteger arrLen = new AtomicInteger(0);
+        int end = 0;
+
+        int arrLen = 0;
 
         //the command list does not include the correct args so return an error
         if(data.length != 4){
-            res.set("-ERR invalid command execution\r\n");
-
-            dos.write(res.get().getBytes());
+            dos.write("-ERR invalid command execution\r\n".getBytes());
             return;
         }
 
@@ -863,86 +946,95 @@ public class Server {
 
         try {
 
-            database.compute(key, (k, v) -> {
+            ReentrantLock keyLock = getLock(key);
 
-                //if key does not exist
-                if (v == null) {
-                    res.set("*0\r\n\r\n");
-                    return null;
-                }
-
-                start.set(Integer.parseInt(data[2]));
-
-                end.set(Integer.parseInt(data[3]));
+            keyLock.lock();
+            try {
 
 
-                list.set(database.get(k).getList());
+                if (!database.containsKey(key)) {
+                    dos.write(("*0\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                    return;
+                } else {
 
-                // Redis allows negative numbers to point to items in their lists
-                // e.g. -1 = last element in list
-                // however this wont work for java as using -1 to get an element will cause an exception
-                // so we use modular arithmetic to transform the negative number to the positive index that points to
-                // the element that the negative number would in redis
-                // e.g. if the list is of size 6 and we passed -1 (last element of list) if we did -1 mod 6
-                // we would get 5 which is the positive index that points to the last element
-                // this calculation will prevent errors.
+                    val = database.get(key);
 
-                if (start.get() < 0) {
-                    start.set(Math.floorMod(start.get(), list.get().size()));
-                }
-                if (end.get() < 0) {
-                    end.set(Math.floorMod(end.get(), list.get().size()));
-                }
+                    if (!"LIST".contains(val.getType())) {
+                        dos.write("-ERR value must be of list type\r\n".getBytes(StandardCharsets.UTF_8));
+                        return;
+                    }
 
-                // range checks
-                if (start.get() > list.get().size()) {
-                    res.set("*0\r\n\r\n");
-                    return v;
-                }
-                if (end.get() >= list.get().size()) {
-                    end.set(list.get().size() - 1);
-                }
+                    start = Integer.parseInt(data[2]);
 
-                //calculate length of string
-                // as the end is inclusive we add 1 to get the accurate length
-                arrLen.set((end.get() - start.get()) + 1);
+                    end = Integer.parseInt(data[3]);
 
-                //set the len of array for response
-                builder.append('*')
-                        .append(arrLen)
-                        .append('\r')
-                        .append('\n');
+                    list = val.getList();
 
-                for (int i = start.get(); i <= end.get(); i++) {
-                    builder.append('$')
-                            .append(list.get().get(i).length())
-                            .append('\r')
-                            .append('\n')
-                            .append(list.get().get(i))
+
+                    // Redis allows negative numbers to point to items in their lists
+                    // e.g. -1 = last element in list
+                    // however this wont work for java as using -1 to get an element will cause an exception
+                    // so we use modular arithmetic to transform the negative number to the positive index that points to
+                    // the element that the negative number would in redis
+                    // e.g. if the list is of size 6 and we passed -1 (last element of list) if we did -1 mod 6
+                    // we would get 5 which is the positive index that points to the last element
+                    // this calculation will prevent errors.
+
+                    if (start < 0) {
+                        start = Math.floorMod(start, list.size());
+                    }
+                    if (end < 0) {
+                        end = (Math.floorMod(end, list.size()));
+                    }
+
+                    // range checks
+                    if (start > list.size()) {
+                        dos.write("*0\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+                        return;
+                    }
+                    if (end >= list.size()) {
+                        end = (list.size() - 1);
+                    }
+
+                    //calculate length of string
+                    // as the end is inclusive we add 1 to get the accurate length
+                    arrLen = ((end - start) + 1);
+
+                    //set the len of array for response
+                    builder.append('*')
+                            .append(arrLen)
                             .append('\r')
                             .append('\n');
+
+                    for (int i = start; i <= end; i++) {
+                        builder.append('$')
+                                .append(list.get(i).length())
+                                .append('\r')
+                                .append('\n')
+                                .append(list.get(i))
+                                .append('\r')
+                                .append('\n');
+                    }
+
+                    res = builder.toString();
+
                 }
-
-                res.set(builder.toString());
-
-
-                return v;
-            });
-
-            if("".equals(res.get())){
-                dos.write("-ERR something went wrong\r\n".getBytes());
-                return;
+            } finally {
+                keyLock.unlock();
             }
+
+
+
 
         }  catch (Exception e){
 
-            res.set("-ERR something went wrong\r\n");
+            res = "-ERR something went wrong\r\n";
             e.printStackTrace();
-            dos.write(res.get().getBytes());
+            dos.write(res.getBytes());
 
         }
 
-        dos.write(res.get().getBytes());
+        dos.write(res.getBytes());
 
     }
 
@@ -1060,7 +1152,9 @@ public class Server {
 
         String key = "";
 
-        AtomicReference<LinkedList<String>> list = new AtomicReference<>(null);
+        Value val = null;
+
+        LinkedList<String> list = null;
 
         if(!(data.length > 2)){
             res.set("-ERR invalid command\r\n");
@@ -1071,54 +1165,53 @@ public class Server {
         key = data[1];
 
 
-        database.compute(key, (k,v) ->{
+        ReentrantLock keyLock = getLock(key);
 
+        keyLock.lock();
 
-            if(v == null) {
-                v = new Value();
-                v.setType("LIST");
-                list.set(new LinkedList<>());
+        try {
+            //If key does not exist, create it and set new value
+            if (!database.containsKey(key)) {
 
+                val = new Value();
+                val.setType("LIST");
+                list = new LinkedList<>();
 
-                for(int i = 2 ; i < data.length; i++){
+                for (int i = 2; i < data.length; i++) {
 
-                    list.get().addFirst(data[i]);
+                    list.addFirst(data[i]);
 
                 }
 
-                v.setList(list.get());
+                val.setList(list);
+
+                database.put(key, val);
 
             } else {
 
-                if(!"LIST".equals(v.getType())){
-                    res.set("-ERR value must be of LIST type\r\n");
-                    return v;
+                val = database.get(key);
+
+                if (!"LIST".equals(val.getType())) {
+                    dos.write("-ERR value must be of LIST type\r\n".getBytes(StandardCharsets.UTF_8));
+                    return;
                 }
 
-                list.set(v.getList());
+                list = val.getList();
 
-                for(int i = 2 ; i < data.length; i++){
-                    list.get().addFirst(data[i]);
+                for (int i = 2; i < data.length; i++) {
+                    list.addFirst(data[i]);
                 }
 
-                v.setList(list.get());
-
+                val.setList(list);
 
             }
-
-
-            return v;
-        });
-
-        //if the compute method populated res, return
-        if(!"".equals(res.get())){
-            dos.write(res.get().getBytes());
-            return;
+        } finally {
+            keyLock.unlock();
         }
 
 
 
-        res.set(":" + list.get().size() + "\r\n");
+        res.set(":" + list.size() + "\r\n");
         dos.write(res.get().getBytes());
 
     }
@@ -1131,7 +1224,9 @@ public class Server {
 
         String key = "";
 
-        AtomicReference<LinkedList<String>> list = new AtomicReference<>(null);
+        Value val = null;
+
+        LinkedList<String> list = null;
 
         if(!(data.length > 2)){
             res.set("-ERR invalid command\r\n");
@@ -1142,54 +1237,53 @@ public class Server {
         key = data[1];
 
 
-        database.compute(key, (k,v) ->{
+        ReentrantLock keyLock = getLock(key);
 
+        keyLock.lock();
 
-            if(v == null) {
-                v = new Value();
-                v.setType("LIST");
-                list.set(new LinkedList<>());
+        try {
+            //If key does not exist, create it and set new value
+            if (!database.containsKey(key)) {
 
+                val = new Value();
+                val.setType("LIST");
+                list = new LinkedList<>();
 
-                for(int i = 2 ; i < data.length; i++){
+                for (int i = 2; i < data.length; i++) {
 
-                    list.get().addLast(data[i]);
+                    list.addLast(data[i]);
 
                 }
 
-                v.setList(list.get());
+                val.setList(list);
+
+                database.put(key, val);
 
             } else {
 
-                if(!"LIST".equals(v.getType())){
-                    res.set("-ERR value must be of LIST type\r\n");
-                    return v;
+                val = database.get(key);
+
+                if (!"LIST".equals(val.getType())) {
+                    dos.write("-ERR value must be of LIST type\r\n".getBytes(StandardCharsets.UTF_8));
+                    return;
                 }
 
-                list.set(v.getList());
+                list = val.getList();
 
-                for(int i = 2 ; i < data.length; i++){
-                    list.get().addLast(data[i]);
+                for (int i = 2; i < data.length; i++) {
+                    list.addLast(data[i]);
                 }
 
-                v.setList(list.get());
-
+                val.setList(list);
 
             }
-
-
-            return v;
-        });
-
-        //if the compute method populated res, return
-        if(!"".equals(res.get())){
-            dos.write(res.get().getBytes());
-            return;
+        } finally {
+            keyLock.unlock();
         }
 
 
 
-        res.set(":" + list.get().size() + "\r\n");
+        res.set(":" + list.size() + "\r\n");
         dos.write(res.get().getBytes());
 
     }
@@ -1202,7 +1296,9 @@ public class Server {
 
         String key = "";
 
-        AtomicReference<String> res = new AtomicReference<>("");
+        Value val = null;
+
+        String res = "";
 
         if(data.length != 4){
             dos.write("-ERR invalid arguments\r\n".getBytes(StandardCharsets.UTF_8));
@@ -1211,11 +1307,23 @@ public class Server {
 
         key = data[1];
 
-        database.compute(key,(k, v) -> {
+        ReentrantLock keyLock = getLock(key);
 
-            if(v == null){
-                return null;
+        keyLock.lock();
+
+        try {
+            if (!database.containsKey(key)) {
+                dos.write("$0\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
             }
+
+            val = database.get(key);
+
+            if(!"STRING".equals(val.getType())){
+                dos.write("-ERR value must be of STRING type\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
 
             String value = "";
 
@@ -1227,19 +1335,20 @@ public class Server {
 
             int end = Integer.parseInt(data[3]);
 
-            value = v.getValue();
+            value = val.getValue();
 
             if(start < 0){
-               start =  Math.floorMod(start,value.length());
+                start =  Math.floorMod(start,value.length());
             } else if(start > value.length()){
-                res.set("$0\r\n\r\n");
-                return v;
+                dos.write("$0\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
             }
 
             if(end < 0){
                 end = Math.floorMod(end,value.length());
             } else if (end >= value.length()){
-                end = value.length();
+                System.out.println(end);
+                end = value.length() - 1;
             }
 
             temp = value.substring(start, end + 1);
@@ -1252,13 +1361,21 @@ public class Server {
                     .append('\r')
                     .append('\n');
 
-            res.set(subStr.toString());
-
-            return v;
-        });
+            res = subStr.toString();
 
 
-        dos.write(res.get().getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e){
+
+            res = "-ERR something went wrong\r\n";
+
+
+        }
+        finally {
+            keyLock.unlock();
+        }
+
+
+        dos.write(res.getBytes(StandardCharsets.UTF_8));
 
     }
 
@@ -1266,7 +1383,7 @@ public class Server {
 
         String[] data = command.split(" ");
 
-        AtomicReference<String> res = new AtomicReference<>("");
+        String res = "";
 
         if(data.length != 5){
             dos.write("-ERR invalid arguments\r\n".getBytes(StandardCharsets.UTF_8));
@@ -1278,41 +1395,65 @@ public class Server {
         String destKey = data[2];
 
         //Where From LEFT/RIGHT for src
-        String wf = data[3];
+        String whereFrom = data[3];
 
         //Where To LEFT/RIGHT for dest
-        String wt = data[4];
+        String whereTo = data[4];
 
-        database.compute(srcKey,(k,v) ->{
+        String key1 = "";
+        String key2 = "";
 
-            if(v == null){
-                res.set("$0\r\n\r\n");
-                return null;
+        ReentrantLock keyLock1 = null;
+        ReentrantLock keyLock2 = null;
+
+
+
+        //For alphabetical locking order to prevent deadlock
+        int comp = srcKey.compareTo(destKey);
+
+        if(comp == 0){
+
+            keyLock1 = getLock(srcKey);
+
+        } else {
+             key1  = comp <= 0 ? srcKey  : destKey;
+             key2 = comp <= 0 ? destKey : srcKey;
+
+            keyLock1 = getLock(key1);
+            keyLock2 = getLock(key2);
+        }
+
+
+        keyLock1.lock();
+        if(keyLock2 != null)
+            keyLock2.lock();
+
+        try{
+
+            if(!database.containsKey(key1)){
+                dos.write("$0\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
             }
 
+            Value v1 = database.get(key1);
+            Value v2 = database.get(key2);
 
-            if(!"LIST".equals(v.getType())){
-                res.set("$3\r\nnil\r\n");
-                return v;
+            if(!"LIST".equals(v1.getType()) && "LIST".equals(v2.getType())){
+                dos.write("-ERR values must be of LIST type\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
             }
-
-            Value temp = null;
 
             LinkedList<String> src;
 
             LinkedList<String> dest;
 
+
             if(srcKey.equals(destKey)){
-                src = v.getList();
-                dest = v.getList();
+                src = v1.getList();
+                dest = v1.getList();
             } else {
-                temp = database.get(destKey);
-                if(!"LIST".equals(temp.getType())){
-                    res.set("$3\r\nnil\r\n");
-                    return v;
-                }
-                src = v.getList();
-                dest = temp.getList();
+                src = v1.getList();
+                dest = v2.getList();
             }
 
             String srcElem = "";
@@ -1320,22 +1461,22 @@ public class Server {
             StringBuilder builder = new StringBuilder();
 
 
-            if("LEFT".equals(wf)){
+            if("LEFT".equals(whereFrom)){
                 srcElem = src.removeFirst();
-            } else if ("RIGHT".equals(wf)){
+            } else if ("RIGHT".equals(whereFrom)){
                 srcElem = src.removeLast();
             } else {
-                res.set("-ERR invalid argument\r\n");
-                return v;
+                dos.write("-ERR invalid argument\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
             }
 
-            if("LEFT".equals(wt)){
+            if("LEFT".equals(whereTo)){
                 dest.addFirst(srcElem);
-            } else if ("RIGHT".equals(wt)){
+            } else if ("RIGHT".equals(whereTo)){
                 dest.addLast(srcElem);
             } else {
-                res.set("-ERR invalid argument\r\n");
-                return v;
+                dos.write("-ERR invalid argument\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
             }
 
             builder.append('$')
@@ -1346,13 +1487,16 @@ public class Server {
                     .append('\r')
                     .append('\n');
 
-            res.set(builder.toString());
+            res = builder.toString();
 
-            return v;
-        });
+        } finally {
+            keyLock1.unlock();
+            if(keyLock2 != null)
+                keyLock2.unlock();
+        }
 
 
-        dos.write(res.get().getBytes(StandardCharsets.UTF_8));
+        dos.write(res.getBytes(StandardCharsets.UTF_8));
 
     }
 
@@ -1364,19 +1508,13 @@ public class Server {
 
         AtomicReference<String> res = new AtomicReference<>("");
 
-        if(!(data.length >= 5)){
+        if(data.length != 5 && data.length != 8){
             dos.write("-ERR invalid arguments\r\n".getBytes(StandardCharsets.UTF_8));
             return;
         }
 
 
-        AtomicBoolean hasOptional = new AtomicBoolean(false);
-
-
-        //If optional block exists
-        if(data.length == 8){
-            hasOptional.set(true);
-        }
+        AtomicBoolean hasOptional = new AtomicBoolean(data.length == 8);
 
         String srcKey = data[1];
 
@@ -1490,6 +1628,8 @@ public class Server {
 
         int by = Integer.parseInt(data[6]);
 
+        boolean destOrderReversed = false;
+
         String order = data[7];
 
         if("COUNT".equals(option)){
@@ -1523,6 +1663,7 @@ public class Server {
                 for(String e : elems){
                     dest.addFirst(e);
                 }
+                destOrderReversed = true;
             } else if("RIGHT".equals(whereTo)){
                 for(String e : elems){
                     dest.addLast(e);
@@ -1539,19 +1680,37 @@ public class Server {
                 dest.addAll(elems);
             }
         }
-
         builder.append('*')
                 .append(elems.size())
                 .append("\r\n");
 
-        for(String e : elems){
-            builder.append('$')
-                    .append(e.length())
-                    .append("\r\n")
-                    .append(e)
-                    .append("\r\n");
+        // For when we get the condition LEFT + OBO, this reads the elems list in reverse so that the correct
+        // destination order is returned
+        if(destOrderReversed){
 
+
+            for(int i = elems.size() - 1; i >= 0; i--){
+                builder.append('$')
+                        .append(elems.get(i).length())
+                        .append("\r\n")
+                        .append(elems.get(i))
+                        .append("\r\n");
+
+            }
+
+        } else {
+
+            for(String e : elems){
+                builder.append('$')
+                        .append(e.length())
+                        .append("\r\n")
+                        .append(e)
+                        .append("\r\n");
+
+            }
         }
+
+
 
         res = builder.toString();
         return res;
@@ -1634,6 +1793,14 @@ public class Server {
         return "EX".equals(option) || "PX".equals(option) || "EXAT".equals(option) || "PXAT".equals(option);
     }
 
+
+    //Lock Functions
+    //If a lock has been assigned to a key, simply return it
+    // if not create a lock, assign it to the key and return it
+    private ReentrantLock getLock(String key){
+
+        return locks.computeIfAbsent(key,(k -> new ReentrantLock()));
+    }
     //Client Handler
     public void handleClient(Socket socket) throws IOException {
 
