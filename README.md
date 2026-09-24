@@ -33,8 +33,37 @@ A lightweight Redis clone built in Java. RESP protocol-compatible (connect with 
 | `LMOVEM` | Moves one or more elements from a source list to a destination list |
 | `LLEN` | Returns the length of a list |
 
-<h2>Program walk-through:</h2>
+## Build & Run
 ...
+
+## Connecting with redis-cli
+
+```bash
+redis-cli -p 6379
+
+# Example Command and Response
+127.0.0.1:6379> SET foo bar
+OK
+127.0.0.1:6379> GET foo
+"bar"
+127.0.0.1:6379> RPUSH mylist a b c
+(integer) 3
+127.0.0.1:6379> LMOVEM mylist mylist2 LEFT RIGHT
+1) "a"
+```
+
+## Architecture
+
+- **Storage layer**: a single `ConcurrentHashMap<String, Value>` acts as the database, giving thread-safe access without a global lock.
+- **List type**: values for list keys are stored as linked lists, supporting push/pop/move-style operations efficiently at both ends.
+- **Networking**: a multi-threaded server that accepts multiple client connections, parses and responds using the RESP (REdis Serialization Protocol) format.
+
+## Roadmap / Ideas
+
+- Add support for more data types (hashes, sets, sorted sets)
+- Add more commands
+- Improve database persistence
+- Improve server efficiency
 
 <!--
  ```diff
