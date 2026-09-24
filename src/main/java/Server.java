@@ -28,29 +28,33 @@ public class Server {
     //Load database from file if it exists
     {
 
-        ObjectMapper mapper = new ObjectMapper();
 
-        try(FileInputStream fis = new FileInputStream("DB.db");){
 
-            TypeReference<ConcurrentHashMap<String,Value>> ref = new TypeReference<ConcurrentHashMap<String, Value>>() {
-            };
 
-           database = mapper.readValue(fis, ref);
+            ObjectMapper mapper = new ObjectMapper();
 
-        }catch(FileNotFoundException e){
-            System.out.println("DB does not exist");
-        }
+            try (FileInputStream fis = new FileInputStream("DB.db");) {
 
-        try(FileInputStream fis = new FileInputStream("EXCACHE.db");){
+                TypeReference<ConcurrentHashMap<String, Value>> ref = new TypeReference<ConcurrentHashMap<String, Value>>() {
+                };
 
-            TypeReference<ConcurrentHashMap<String,String>> ref = new TypeReference<ConcurrentHashMap<String, String>>() {
-            };
+                database = mapper.readValue(fis, ref);
 
-            expiryCache = mapper.readValue(fis, ref);
+            } catch (FileNotFoundException e) {
+                System.out.println("DB does not exist");
+            }
 
-        }catch(FileNotFoundException e){
-            System.out.println("DB Expiry Cache does not exist");
-        }
+            try (FileInputStream fis = new FileInputStream("EXCACHE.db");) {
+
+                TypeReference<ConcurrentHashMap<String, String>> ref = new TypeReference<ConcurrentHashMap<String, String>>() {
+                };
+
+                expiryCache = mapper.readValue(fis, ref);
+
+            } catch (FileNotFoundException e) {
+                System.out.println("DB Expiry Cache does not exist");
+            }
+
 
     }
 
@@ -593,8 +597,6 @@ public class Server {
         dos.write(res.getBytes());
     }
 
-
-
     public void commandGet(String command, DataOutputStream dos) throws IOException {
 
         String[] data = command.split(" ");
@@ -704,8 +706,6 @@ public class Server {
         dos.write((":" + count + "\r\n").getBytes());
 
     }
-
-
 
     public void commandIncrement(String command, DataOutputStream dos) throws IOException {
 
@@ -844,7 +844,6 @@ public class Server {
 
 
     }
-
 
     public void commandDelete(String command, DataOutputStream dos) throws IOException {
 
@@ -1902,12 +1901,11 @@ public class Server {
 
     }
 
-    //Handler Methods
-
-
     public static void main(String[] args) throws IOException {
 
         Server server = new Server(6379);
+
+
 
     }
 
