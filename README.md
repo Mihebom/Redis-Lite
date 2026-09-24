@@ -12,6 +12,25 @@ A lightweight Redis clone built in Java. RESP protocol-compatible (connect with 
 
 - <b>Windows 11</b> 
 
+## Supported Commands
+
+| Command  | Description |
+|----------|-------------|
+| `GET`    | Retrieve the value of a key |
+| `GETRANGE` | Returns a substring based on a given start index and end index (inclusive) |
+| `SET`    | Set the value of a key |
+| `EXISTS` | Check whether a key exists |
+| `INCR` | Increments a value by 1 |
+| `DECR` | Decrements a value by 1 |
+| `DEL` | Deletes one or more values from the database |
+| `LCS` | Returns the length of the longest common subsequence between two strings |
+| `LRANGE` | Returns the elements of a list based on a given start and end index (inclusive) |
+| `LPUSH` | Pushes one or more elements to the head of a list |
+| `RPUSH` | Pushes one or more elements to the tail of a list |
+| `LMOVE` | Moves one element from a source list to a destination list |
+| `LMOVEM` | Moves one or more elements from a source list to a destination list |
+| `LLEN` | Returns the length of a list |
+
 <h2>Program walk-through:</h2>
 ...
 
