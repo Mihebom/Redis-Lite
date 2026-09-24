@@ -5,9 +5,9 @@
 
 ## Supported Commands
 
-| Command  | Description |
+| Command | Description |
 |----------|-------------|
-| `PING` | Returns pong - used to test client-server responsiveness |
+| `PING` | Returns pong |
 | `ECHO` | Returns given user input |
 | `GET`    | Retrieve the value of a key |
 | `GETRANGE` | Returns a substring based on a given start index and end index (inclusive) |
@@ -24,21 +24,22 @@
 | `LMOVEM` | Moves one or more elements from a source list to a destination list (**See optional arguments Below**)|
 | `LLEN` | Returns the length of a list |
 
-## Supported Optional Commands
+## Supported Optional Arguments
 
 ### SET
 
-| Command  | Description |
+| Argument | Description |
 |----------|-------------|
-| `EX seconds` | Set key expiry in seconds (must be a positive integer) |
-| `PX milliseconds` | Set key expiry in milliseconds (must be a positive integer) |
-| `EXAT unix-time-seconds` | Returns the length of a list |
-| `PXAT unix-time-milliseconds` | Returns the length of a list |
+| `EX seconds` | Set the key expiry in seconds (must be a positive integer) |
+| `PX milliseconds` | Set the key expiry in milliseconds (must be a positive integer) |
+| `EXAT unix-time-seconds` | Set the Unix time in which the key will expire, in seconds (must be a positive integer)|
+| `PXAT unix-time-milliseconds` | Set the Unix time in which the key will expire, in milliseconds (must be a positive integer) |
+
 ### LMOVEM
-| Command  | Description |
+| Arguments | Description |
 |----------|-------------|
-| `COUNT count` | Moves up n times. if n is larger than the length of source, all items are moved |
-| `EXACTLY exactly` | Moves up exactly n times. If the length of the source is less than n, no operation is performed |
+| `COUNT n` | Moves up n times. if n is larger than the length of source, all items are moved |
+| `EXACTLY n` | Moves up exactly n times. If the length of the source is less than n, no operation is performed |
 | `OBO` | Moves elements from source to destination one at a time i.e. pop and push |
 | `BULK` | Moves all elements at once keeping their relative order |
 
@@ -77,7 +78,7 @@ OK
 
 ## Architecture
 
-- **Storage layer**: a single `ConcurrentHashMap<String, Value>` acts as the database, giving thread-safe access without a global lock.
+- **Database**: a single `ConcurrentHashMap<String, Value>` acts as the database, giving thread-safe access without a global lock.
 - **List type**: values for list keys are stored as linked lists, supporting push/pop/move-style operations efficiently at both ends.
 - **Networking**: a multi-threaded server that accepts multiple client connections, parses and responds using the RESP (REdis Serialization Protocol) format.
 
