@@ -39,9 +39,10 @@ A lightweight Redis clone built in Java. RESP protocol-compatible (connect with 
 ## Connecting with redis-cli
 
 ```bash
+#Connect client to Server
 redis-cli -p 6379
 
-# Example Command and Response
+# Example commands and responses
 127.0.0.1:6379> SET foo bar
 OK
 127.0.0.1:6379> GET foo
