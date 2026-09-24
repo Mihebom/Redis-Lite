@@ -133,7 +133,11 @@ public class Server {
 
         String deserializedResponse = "";
 
-        char type = (char) in.read();
+        int type = in.read();
+
+        if(type == -1){
+            throw new SocketException("Client Disconnected");
+        }
 
         if (type == '+') {
             deserializedResponse = deserializeSimpleString(in);
@@ -389,7 +393,7 @@ public class Server {
 
         String cmd = command.split(" ")[0];
 
-        System.out.println("Received command: [" + cmd + "]");
+        System.out.println("Received command: [" + command + "]");
 
 
         if(("PING").equals(cmd)){
@@ -426,6 +430,8 @@ public class Server {
             commandLMOVE(command, dos);
         } else if(("LMOVEM").equals(cmd)){
             commandLMOVEM(command,dos);
+        } else if(("LLEN").equals(cmd)){
+            commandLLEN(command,dos);
         }else{
             String err = "-err invalid command given!\r\n";
             dos.write(err.getBytes());
@@ -1604,6 +1610,55 @@ public class Server {
 
 
         dos.write(res.getBytes(StandardCharsets.UTF_8));
+
+    }
+
+    public void commandLLEN(String command, DataOutputStream dos) throws IOException{
+
+        String[] data = command.split(" ");
+
+        int res = 0;
+
+        String key = "";
+
+        Value val = null;
+
+        if(data.length != 2){
+            dos.write("-ERR incorrect command arguments\r\n".getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+
+        key = data[1];
+
+        ReentrantLock keyLock = getLock(key);
+
+        keyLock.lock();
+
+        try {
+
+            if(database.containsKey(key)){
+
+                val = database.get(key);
+
+                if(!"LIST".equals(val.getType()))
+                {
+                    dos.write("-ERR value must be of type LIST\r\n".getBytes(StandardCharsets.UTF_8));
+                    return;
+                }
+
+                res = val.getList().size();
+            }
+
+
+
+        } finally {
+            keyLock.unlock();
+        }
+
+
+
+        dos.write((":" + res + "\r\n").getBytes(StandardCharsets.UTF_8));
+
 
     }
 
