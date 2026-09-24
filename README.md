@@ -16,6 +16,8 @@ A lightweight Redis clone built in Java. RESP protocol-compatible (connect with 
 
 | Command  | Description |
 |----------|-------------|
+| `PING` | Returns pong - used to test client-server responsiveness |
+| `ECHO` | Returns given user input |
 | `GET`    | Retrieve the value of a key |
 | `GETRANGE` | Returns a substring based on a given start index and end index (inclusive) |
 | `SET`    | Set the value of a key |
