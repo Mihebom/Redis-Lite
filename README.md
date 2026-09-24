@@ -3,15 +3,6 @@
 <h2>Description</h2>
 <br>A lightweight Redis clone built in Java. RESP protocol-compatible (connect with redis-cli), multi-threaded server, with a ConcurrentHashMap-backed store and linked-list-powered list operations, including recent commands like LMOVEM.<br />
 
-
-<h2>Languages and Utilities Used</h2>
-
-- <b>Java</b> 
-
-<h2>Environments Used </h2>
-
-- <b>Windows 11</b> 
-
 ## Supported Commands
 
 | Command  | Description |
@@ -20,7 +11,7 @@
 | `ECHO` | Returns given user input |
 | `GET`    | Retrieve the value of a key |
 | `GETRANGE` | Returns a substring based on a given start index and end index (inclusive) |
-| `SET`    | Set the value of a key |
+| `SET`    | Set the value of a key (**See optional arguments Below**)|
 | `EXISTS` | Check whether a key exists |
 | `INCR` | Increments a value by 1 |
 | `DECR` | Decrements a value by 1 |
@@ -30,11 +21,26 @@
 | `LPUSH` | Pushes one or more elements to the head of a list |
 | `RPUSH` | Pushes one or more elements to the tail of a list |
 | `LMOVE` | Moves one element from a source list to a destination list |
-| `LMOVEM` | Moves one or more elements from a source list to a destination list |
+| `LMOVEM` | Moves one or more elements from a source list to a destination list (**See optional arguments Below**)|
 | `LLEN` | Returns the length of a list |
 
+## Supported Optional Commands
 
+### SET
 
+| Command  | Description |
+|----------|-------------|
+| `EX seconds` | Set key expiry in seconds (must be a positive integer) |
+| `PX milliseconds` | Set key expiry in milliseconds (must be a positive integer) |
+| `EXAT unix-time-seconds` | Returns the length of a list |
+| `PXAT unix-time-milliseconds` | Returns the length of a list |
+### LMOVEM
+| Command  | Description |
+|----------|-------------|
+| `COUNT count` | Moves up n times. if n is larger than the length of source, all items are moved |
+| `EXACTLY exactly` | Moves up exactly n times. If the length of the source is less than n, no operation is performed |
+| `OBO` | Moves elements from source to destination one at a time i.e. pop and push |
+| `BULK` | Moves all elements at once keeping their relative order |
 
 ## Build & Run
 
