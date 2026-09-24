@@ -33,10 +33,26 @@
 | `LMOVEM` | Moves one or more elements from a source list to a destination list |
 | `LLEN` | Returns the length of a list |
 
-## Build & Run
-...
 
-## Connecting with redis-cli
+
+
+## Build & Run
+
+```bash
+# Clone the repo
+git clone https://github.com/Mihebom/Redis-Lite.git
+cd <your-repo>
+
+# Build
+mvn compile
+
+# Run
+mvn exec:java
+```
+
+By default the server starts on port `6379` , so you can connect immediately with `redis-cli`.
+
+## Connecting the redis-cli
 
 ```bash
 #Connect client to Server
@@ -61,10 +77,10 @@ OK
 
 ## Roadmap / Ideas
 
-- Add support for more data types (hashes, sets, sorted sets)
-- Add more commands
-- Improve database persistence
-- Improve server efficiency
+- [ ] Add support for more data types (hashes, sets, sorted sets)
+- [ ] Add more commands
+- [ ] Improve database persistence
+- [ ] Improve server efficiency
 
 <!--
  ```diff
