@@ -3,24 +3,15 @@
 <h2>Description</h2>
 <br>A lightweight Redis clone built in Java. RESP protocol-compatible (connect with redis-cli), multi-threaded server, with a ConcurrentHashMap-backed store and linked-list-powered list operations, including recent commands like LMOVEM.<br />
 
-
-<h2>Languages and Utilities Used</h2>
-
-- <b>Java</b> 
-
-<h2>Environments Used </h2>
-
-- <b>Windows 11</b> 
-
 ## Supported Commands
 
-| Command  | Description |
+| Command | Description |
 |----------|-------------|
-| `PING` | Returns pong - used to test client-server responsiveness |
+| `PING` | Returns pong |
 | `ECHO` | Returns given user input |
 | `GET`    | Retrieve the value of a key |
 | `GETRANGE` | Returns a substring based on a given start index and end index (inclusive) |
-| `SET`    | Set the value of a key |
+| `SET`    | Set the value of a key (**See optional arguments Below**)|
 | `EXISTS` | Check whether a key exists |
 | `INCR` | Increments a value by 1 |
 | `DECR` | Decrements a value by 1 |
@@ -30,13 +21,45 @@
 | `LPUSH` | Pushes one or more elements to the head of a list |
 | `RPUSH` | Pushes one or more elements to the tail of a list |
 | `LMOVE` | Moves one element from a source list to a destination list |
-| `LMOVEM` | Moves one or more elements from a source list to a destination list |
+| `LMOVEM` | Moves one or more elements from a source list to a destination list (**See optional arguments Below**)|
 | `LLEN` | Returns the length of a list |
 
-## Build & Run
-...
+## Supported Optional Arguments
 
-## Connecting with redis-cli
+### SET
+
+| Argument | Description |
+|----------|-------------|
+| `EX seconds` | Set the key expiry in seconds (must be a positive integer) |
+| `PX milliseconds` | Set the key expiry in milliseconds (must be a positive integer) |
+| `EXAT unix-time-seconds` | Set the Unix time in which the key will expire, in seconds (must be a positive integer)|
+| `PXAT unix-time-milliseconds` | Set the Unix time in which the key will expire, in milliseconds (must be a positive integer) |
+
+### LMOVEM
+| Arguments | Description |
+|----------|-------------|
+| `COUNT n` | Moves up n times. if n is larger than the length of source, all items are moved |
+| `EXACTLY n` | Moves up exactly n times. If the length of the source is less than n, no operation is performed |
+| `OBO` | Moves elements from source to destination one at a time i.e. pop and push |
+| `BULK` | Moves all elements at once keeping their relative order |
+
+## Build & Run
+
+```bash
+# Clone the repo
+git clone https://github.com/Mihebom/Redis-Lite.git
+cd <your-repo>
+
+# Build
+mvn compile
+
+# Run
+mvn exec:java
+```
+
+By default the server starts on port `6379` , so you can connect immediately with `redis-cli`.
+
+## Connecting the redis-cli
 
 ```bash
 #Connect client to Server
@@ -55,16 +78,16 @@ OK
 
 ## Architecture
 
-- **Storage layer**: a single `ConcurrentHashMap<String, Value>` acts as the database, giving thread-safe access without a global lock.
+- **Database**: a single `ConcurrentHashMap<String, Value>` acts as the database, giving thread-safe access without a global lock.
 - **List type**: values for list keys are stored as linked lists, supporting push/pop/move-style operations efficiently at both ends.
 - **Networking**: a multi-threaded server that accepts multiple client connections, parses and responds using the RESP (REdis Serialization Protocol) format.
 
 ## Roadmap / Ideas
 
-- Add support for more data types (hashes, sets, sorted sets)
-- Add more commands
-- Improve database persistence
-- Improve server efficiency
+- [ ] Add support for more data types (hashes, sets, sorted sets)
+- [ ] Add more commands
+- [ ] Improve database persistence
+- [ ] Improve server efficiency
 
 <!--
  ```diff
