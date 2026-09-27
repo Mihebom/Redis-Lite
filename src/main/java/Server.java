@@ -1,5 +1,6 @@
 
 
+import DatabaseObjects.Value;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -436,6 +437,16 @@ public class Server {
             commandLMOVEM(command,dos);
         } else if(("LLEN").equals(cmd)){
             commandLLEN(command,dos);
+        } else if(("SADD").equals(cmd)){
+            commandSADD(command, dos);
+        } else if (("SMEMBERS").equals(cmd)){
+            commandSMEMBERS(command,dos);
+        } else if (("SCARD").equals(cmd)){
+            commandSCARD(command,dos);
+        } else if (("SMOVE").equals(cmd)){
+            commandSMOVE(command, dos);
+        } else if(("SDIFF").equals(cmd)){
+            commandSDIFF(command, dos);
         }else{
             String err = "-err invalid command given!\r\n";
             dos.write(err.getBytes());
@@ -445,6 +456,8 @@ public class Server {
 
     }
 
+
+    //General Commands
     public void commandPing(DataOutputStream dos) throws IOException {
 
         dos.write(new byte[]{'+','P','O','N','G','\r','\n'});
@@ -491,56 +504,125 @@ public class Server {
 
     }
 
-    public Value createValue(String key, String[] data) throws IOException {
+    public void commandExists(String command, DataOutputStream dos) throws IOException {
 
-        String option = "";
+        String[] data = command.split(" ");
 
-        String value = "";
+        String key = "";
 
-        Value val = new Value();
+        if(!(data.length >= 2)){
+            dos.write("-ERR no keys received\r\n".getBytes());
+            return;
+        }
 
-        Long timeToExpire = null;
+        int count = 0;
 
-        StringBuilder str = new StringBuilder();
+        for(int i = 1; i < data.length; i++){
 
 
+            key = data[i];
 
-            for (int i = 2; i < data.length; i++) {
+            ReentrantLock keyLock = getLock(data[i]);
 
-                if(!containsExpiryOption(data[i])) {
-                    str.append(data[i]);
-                    str.append(" ");
-                } else {
 
-                    //Save the option for later
-                    option = data[i];
+            keyLock.lock();
+            try {
 
-                    //Get the time to expire next
-                    i++;
-                    timeToExpire = Long.parseLong(data[i]);
-
-                    //bad impl
-                    // make sure there is nothing else after ex option as this should be final option
-                    if(i + 1 == data.length - 1) {
-                        return  null;
-                    }
+                if(database.containsKey(key)){
+                    count++;
                 }
+
+            } finally {
+                keyLock.unlock();
             }
 
 
-            value = str.toString().strip();
 
-            //Once we have successfully stored the kv pair, set the expiry option if it exists
-            val.setType("STRING");
-            val.setValue(value);
+        }
 
-            if(timeToExpire != null) {
-                setExpiry(key, timeToExpire, option);
-            }
 
-        return val;
+
+        dos.write((":" + count + "\r\n").getBytes());
+
     }
 
+    public void commandDelete(String command, DataOutputStream dos) throws IOException {
+
+        String[] data = command.split(" ");
+
+        String key = "";
+
+        int count = 0;
+
+        if(!(data.length >= 2)){
+            dos.write("-ERR no keys received\r\n".getBytes());
+            return;
+        }
+
+
+        for(int i = 1; i < data.length; i++){
+
+
+            key = data[i];
+            ReentrantLock keyLock = getLock(key);
+
+            keyLock.lock();
+            try {
+                if (database.containsKey(key)) {
+                    database.remove(key);
+                    expiryCache.remove(key);
+                    count++;
+                }
+            } finally {
+                keyLock.unlock();
+            }
+
+
+        }
+
+
+        dos.write((":" + count + "\r\n").getBytes());
+
+    }
+
+    public void commandSave(DataOutputStream dos) throws IOException {
+
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        String res = "";
+
+        //For DB
+        try(FileOutputStream fos = new FileOutputStream("DB.db")){
+
+            objectMapper.writeValue(fos, database);
+
+
+
+        } catch (Exception e){
+            res = "-ERR something went wrong\r\n";
+            dos.write(res.getBytes());
+            e.printStackTrace();
+        }
+
+        //For expiry Cache
+        try(FileOutputStream fos = new FileOutputStream("EXCACHE.db")){
+
+            objectMapper.writeValue(fos, expiryCache);
+
+
+
+        } catch (Exception e){
+            res = "-ERR something went wrong\r\n";
+            dos.write(res.getBytes());
+            e.printStackTrace();
+        }
+
+        res = "+OK\r\n";
+        dos.write(res.getBytes());
+
+    }
+
+    //String Commands
     public void commandSet(String command, DataOutputStream dos) throws IOException {
 
         String res = "";
@@ -640,7 +722,7 @@ public class Server {
                     return;
                 }
 
-                System.out.println("Value: " + value);
+                System.out.println("DatabaseObjects.Value: " + value);
                 str.append('$')
                         .append(value.getValue().length())
                         .append('\r')
@@ -663,48 +745,6 @@ public class Server {
 
 
         dos.write(res.getBytes());
-    }
-
-    public void commandExists(String command, DataOutputStream dos) throws IOException {
-
-        String[] data = command.split(" ");
-
-        String key = "";
-
-        if(!(data.length >= 2)){
-            dos.write("-ERR no keys received\r\n".getBytes());
-            return;
-        }
-
-        int count = 0;
-
-        for(int i = 1; i < data.length; i++){
-
-
-            key = data[i];
-
-            ReentrantLock keyLock = getLock(data[i]);
-
-
-            keyLock.lock();
-            try {
-
-                if(database.containsKey(key)){
-                    count++;
-                }
-
-            } finally {
-                keyLock.unlock();
-            }
-
-
-
-        }
-
-
-
-        dos.write((":" + count + "\r\n").getBytes());
-
     }
 
     public void commandIncrement(String command, DataOutputStream dos) throws IOException {
@@ -845,45 +885,7 @@ public class Server {
 
     }
 
-    public void commandDelete(String command, DataOutputStream dos) throws IOException {
-
-        String[] data = command.split(" ");
-
-        String key = "";
-
-        int count = 0;
-
-        if(!(data.length >= 2)){
-            dos.write("-ERR no keys received\r\n".getBytes());
-            return;
-        }
-
-
-        for(int i = 1; i < data.length; i++){
-
-
-            key = data[i];
-            ReentrantLock keyLock = getLock(key);
-
-            keyLock.lock();
-            try {
-                if (database.containsKey(key)) {
-                    database.remove(key);
-                    expiryCache.remove(key);
-                    count++;
-                }
-            } finally {
-                keyLock.unlock();
-            }
-
-
-        }
-
-
-        dos.write((":" + count + "\r\n").getBytes());
-
-    }
-
+    //List Commands
     public void commandLRange(String command, DataOutputStream dos) throws IOException {
 
         String[] data = command.split(" ");
@@ -1072,43 +1074,6 @@ public class Server {
 
 
         dos.write((":" + res.get() + "\r\n").getBytes());
-
-    }
-
-    public void commandSave(DataOutputStream dos) throws IOException {
-
-        ObjectMapper objectMapper = new ObjectMapper();
-
-        String res = "";
-
-        //For DB
-        try(FileOutputStream fos = new FileOutputStream("DB.db")){
-
-            objectMapper.writeValue(fos, database);
-
-
-
-        } catch (Exception e){
-            res = "-ERR something went wrong\r\n";
-            dos.write(res.getBytes());
-            e.printStackTrace();
-        }
-
-        //For expiry Cache
-        try(FileOutputStream fos = new FileOutputStream("EXCACHE.db")){
-
-            objectMapper.writeValue(fos, expiryCache);
-
-
-
-        } catch (Exception e){
-            res = "-ERR something went wrong\r\n";
-            dos.write(res.getBytes());
-            e.printStackTrace();
-        }
-
-        res = "+OK\r\n";
-        dos.write(res.getBytes());
 
     }
 
@@ -1661,6 +1626,355 @@ public class Server {
 
     }
 
+    //Set Commands
+    public void commandSADD(String command, DataOutputStream dos) throws IOException{
+
+        String[] data = command.split(" ");
+
+        if(!(data.length >= 2)){
+            dos.write("-ERR invalid command execution\r\n".getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+
+        String key = "";
+
+        key = data[1];
+
+        ReentrantLock keyLock = getLock(key);
+
+        HashSet<String> set = null;
+
+        Value val = null;
+
+        int count = 0;
+
+        keyLock.lock();
+
+        try {
+
+            if(!database.containsKey(key)){
+
+                val = new Value();
+                val.setType("SET");
+                set = new HashSet<>();
+                for(int i = 2; i < data.length; i++){
+
+                    if(!set.contains(data[i])){
+
+                        set.add(data[i]);
+                        count++;
+                    }
+
+                }
+                val.setSet(set);
+                database.put(key,val);
+
+
+            } else {
+
+                val = database.get(key);
+                set = val.getSet();
+                for(int i = 2; i < data.length; i++){
+
+                    if(!set.contains(data[i])){
+                        set.add(data[i]);
+                        count++;
+                    }
+
+                }
+                val.setSet(set);
+
+            }
+
+
+        } finally {
+            keyLock.unlock();
+        }
+
+        dos.write((":" + count + "\r\n").getBytes(StandardCharsets.UTF_8));
+
+    }
+
+    public void commandSMEMBERS(String command, DataOutputStream dos) throws IOException{
+
+        String[] data = command.split(" ");
+
+        if(data.length != 2){
+            dos.write("-ERR invalid command execution\r\n".getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+
+        String key = "";
+
+        key = data[1];
+
+        StringBuilder res = new StringBuilder();
+
+        Value val = null;
+
+        ReentrantLock keyLock = getLock(key);
+
+        keyLock.lock();
+
+
+        try {
+
+            if(!database.containsKey(key)){
+                dos.write("*0\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            val = database.get(key);
+
+            if(!"SET".equals(val.getType())){
+                dos.write("-ERR value must be of type SET\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            res.append('*')
+                    .append(val.getSet().size())
+                            .append("\r\n");
+
+            val.getSet().forEach(e -> {
+                res.append('$')
+                        .append(e.length())
+                        .append("\r\n")
+                        .append(e)
+                        .append("\r\n");
+            });
+
+
+
+        }finally {
+            keyLock.unlock();
+        }
+
+        dos.write(res.toString().getBytes(StandardCharsets.UTF_8));
+
+    }
+
+    public void commandSCARD(String command, DataOutputStream dos) throws IOException{
+
+        String[] data = command.split(" ");
+
+        if(data.length != 2){
+            dos.write(":0\r\n".getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+
+        String key = "";
+
+        int res = 0;
+
+        key = data[1];
+
+        Value val = null;
+
+        ReentrantLock keyLock = getLock(key);
+
+        keyLock.lock();
+
+        try{
+
+            if(!database.containsKey(key)){
+                dos.write(":0\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            val = database.get(key);
+
+            if(!"SET".equals(val.getType())){
+                dos.write("-ERR value must be of type SET\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            res = val.getSet().size();
+
+        } finally {
+            keyLock.unlock();
+        }
+
+        dos.write((":" + res + "\r\n").getBytes(StandardCharsets.UTF_8));
+
+    }
+
+    public void commandSMOVE(String command, DataOutputStream dos) throws IOException{
+
+        String[] data = command.split(" ");
+
+        if(data.length != 4){
+            dos.write("-ERR invalid command execution\r\n".getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+
+        String src = data[1], dest = data[2], k1 = "", k2 = "", member = data[3];;
+
+        int res = 0;
+
+        int comp = src.compareTo(dest);
+
+        if(comp == 0){
+            //if both src and dest are the same, not op is performed
+            dos.write(":0\r\n".getBytes(StandardCharsets.UTF_8));
+            return;
+        } else {
+
+            k1 = comp < 0 ? src : dest;
+
+            k2 = comp < 0 ? dest : src;
+
+        }
+
+        ReentrantLock keyLock1 = getLock(k1);
+        ReentrantLock keyLock2 = getLock(k2);
+
+        keyLock1.lock();
+        keyLock2.lock();
+
+        try{
+
+
+            //Validate the src key first
+            if(!(database.containsKey(src))){
+                dos.write(":0\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            Value v1 = database.get(src);
+
+            if(!("SET".equals(v1.getType()))){
+                dos.write("-ERR value must be of type SET\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            HashSet<String> s1 = v1.getSet();
+
+            if(!(s1.contains(member))) {
+                dos.write(":0\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+
+            //Validate the 2nd key next
+            if(!(database.containsKey(dest))){
+                Value temp = new Value();
+                temp.setType("SET");
+                temp.setSet(new HashSet<>());
+                database.put(dest,temp);
+            }
+
+            Value v2 = database.get(dest);
+
+            if(!("SET".equals(v2.getType()))){
+                dos.write("-ERR value must be of type SET\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            HashSet<String> s2 = v2.getSet();
+
+
+                s1.remove(member);
+
+                s2.add(member);
+
+                res++;
+
+
+
+        } finally {
+            keyLock1.unlock();
+            keyLock2.unlock();
+        }
+
+
+        dos.write((":" + res + "\r\n").getBytes(StandardCharsets.UTF_8));
+
+    }
+
+    public void commandSDIFF(String command, DataOutputStream dos) throws IOException{
+
+        String[] data = command.split(" ");
+
+        if(!(data.length >= 2)){
+            dos.write("-ERR invalid command execution\r\n".getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+
+        //the number of keys in the command, excludes the command name
+        int keySize = data.length - 1;
+
+        //Implement Multi-Key Locking
+        MultiKeyLocker multi = new MultiKeyLocker(locks);
+
+        String[] keys = new String[keySize];
+
+        StringBuilder res = new StringBuilder();
+
+        for(int i = 1; i <= keySize; i++){
+            keys[i - 1] = data[i];
+        }
+
+        //Sort Array Alphabetically
+        Arrays.sort(keys);
+
+        multi.lockKeys(keys);
+
+        try {
+
+            String firstKey = data[1];
+
+            Value val = database.get(firstKey);
+
+            if(!"SET".equals(val.getType())){
+                dos.write("-ERR value must be of type SET\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            HashSet<String> firstKeySet = val.getSet();
+
+            //Any value that exists both in the firstKeySet and the otherKeySet, remove from the
+            // firstKeySet
+            for(int i = 2; i <= keySize; i++){
+
+                if(database.containsKey(data[i])){
+
+                    Value temp = database.get(data[i]);
+
+                    if(!"SET".equals(temp.getType())){
+                        dos.write("-ERR value must be of type SET\r\n".getBytes(StandardCharsets.UTF_8));
+                        return;
+                    }
+
+                    HashSet<String> otherKeySet = temp.getSet();
+
+                    firstKeySet.removeAll(otherKeySet);
+
+                }
+
+            }
+
+            res.append('*')
+                    .append(firstKeySet.size())
+                    .append("\r\n");
+
+            for(String s : firstKeySet){
+                res.append('$')
+                        .append(s.length())
+                        .append("\r\n")
+                        .append(s)
+                        .append("\r\n");
+            }
+
+
+
+        } finally {
+            multi.unlockKeys();
+        }
+
+        dos.write(res.toString().getBytes(StandardCharsets.UTF_8));
+
+    }
+
     // Execution with optional args
     public String executeOptional(LinkedList<String> src,LinkedList<String> dest, String whereFrom,String whereTo,String[] data){
 
@@ -1838,6 +2152,56 @@ public class Server {
         return "EX".equals(option) || "PX".equals(option) || "EXAT".equals(option) || "PXAT".equals(option);
     }
 
+    //Creates a value for a key
+    public Value createValue(String key, String[] data) throws IOException {
+
+        String option = "";
+
+        String value = "";
+
+        Value val = new Value();
+
+        Long timeToExpire = null;
+
+        StringBuilder str = new StringBuilder();
+
+
+
+        for (int i = 2; i < data.length; i++) {
+
+            if(!containsExpiryOption(data[i])) {
+                str.append(data[i]);
+                str.append(" ");
+            } else {
+
+                //Save the option for later
+                option = data[i];
+
+                //Get the time to expire next
+                i++;
+                timeToExpire = Long.parseLong(data[i]);
+
+                //bad impl
+                // make sure there is nothing else after ex option as this should be final option
+                if(i + 1 == data.length - 1) {
+                    return  null;
+                }
+            }
+        }
+
+
+        value = str.toString().strip();
+
+        //Once we have successfully stored the kv pair, set the expiry option if it exists
+        val.setType("STRING");
+        val.setValue(value);
+
+        if(timeToExpire != null) {
+            setExpiry(key, timeToExpire, option);
+        }
+
+        return val;
+    }
 
     //Assigns a lock to a key, is persistent throughout the server
     private ReentrantLock getLock(String key){

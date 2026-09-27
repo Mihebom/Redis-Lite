@@ -1,5 +1,7 @@
+package DatabaseObjects;
+
+import java.util.HashSet;
 import java.util.LinkedList;
-import java.util.Set;
 import java.util.SortedSet;
 
 //This class represents the value of a key in the Redis database
@@ -10,7 +12,7 @@ public class Value {
 
     private LinkedList<String> list;
 
-    private Set<String> set;
+    private HashSet<String> set;
 
     private SortedSet<String> sortedSet;
 
@@ -33,11 +35,11 @@ public class Value {
         this.list = list;
     }
 
-    public Set<String> getSet() {
+    public HashSet<String> getSet() {
         return set;
     }
 
-    public void setSet(Set<String> set) {
+    public void setSet(HashSet<String> set) {
         this.set = set;
     }
 
