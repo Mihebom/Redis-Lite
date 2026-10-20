@@ -1,3 +1,5 @@
+package utilities;
+
 import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -9,7 +11,7 @@ public class MultiKeyLocker {
     final ArrayList<ReentrantLock> acquiredLocks = new ArrayList<>();
     final ConcurrentHashMap<String, ReentrantLock> keyLocks;
 
-    MultiKeyLocker(ConcurrentHashMap<String, ReentrantLock> keyLocks){
+    public MultiKeyLocker(ConcurrentHashMap<String, ReentrantLock> keyLocks){
         this.keyLocks = keyLocks;
     }
 
