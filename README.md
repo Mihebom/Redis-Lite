@@ -5,24 +5,30 @@
 
 ## Supported Commands
 
-| Command | Description |
-|----------|-------------|
-| `PING` | Returns pong |
-| `ECHO` | Returns given user input |
-| `GET`    | Retrieve the value of a key |
-| `GETRANGE` | Returns a substring based on a given start index and end index (inclusive) |
-| `SET`    | Set the value of a key (**See optional arguments Below**)|
-| `EXISTS` | Check whether a key exists |
-| `INCR` | Increments a value by 1 |
-| `DECR` | Decrements a value by 1 |
-| `DEL` | Deletes one or more values from the database |
-| `LCS` | Returns the length of the longest common subsequence between two strings |
-| `LRANGE` | Returns the elements of a list based on a given start and end index (inclusive) |
-| `LPUSH` | Pushes one or more elements to the head of a list |
-| `RPUSH` | Pushes one or more elements to the tail of a list |
-| `LMOVE` | Moves one element from a source list to a destination list |
-| `LMOVEM` | Moves one or more elements from a source list to a destination list (**See optional arguments Below**)|
-| `LLEN` | Returns the length of a list |
+| Command     | Description                                                                                            |
+|-------------|--------------------------------------------------------------------------------------------------------|
+| `PING`      | Returns pong                                                                                           |
+| `ECHO`      | Returns given user input                                                                               |
+| `GET`       | Retrieve the value of a key                                                                            |
+| `GETRANGE`  | Returns a substring based on a given start index and end index (inclusive)                             |
+| `SET`       | Set the value of a key (**See optional arguments Below**)                                              |
+| `EXISTS`    | Check whether a key exists                                                                             |
+| `INCR`      | Increments a value by 1                                                                                |
+| `DECR`      | Decrements a value by 1                                                                                |
+| `DEL`       | Deletes one or more values from the database                                                           |
+| `LCS`       | Returns the length of the longest common subsequence between two strings                               |
+| `LRANGE`    | Returns the elements of a list based on a given start and end index (inclusive)                        |
+| `LPUSH`     | Pushes one or more elements to the head of a list                                                      |
+| `RPUSH`     | Pushes one or more elements to the tail of a list                                                      |
+| `LMOVE`     | Moves one element from a source list to a destination list                                             |
+| `LMOVEM`    | Moves one or more elements from a source list to a destination list (**See optional arguments Below**) |
+| `LLEN`      | Returns the length of a list                                                                           |
+| `SADD`      | Adds an element to a set                                                                               |
+| `SMEMBERS`  | Returns the members of a set for a specified key                                                       |
+| `SCARD`     | Returns the number of elements within a set for a specified key                                        |
+| `SMOVE`     | Moves elements from source to destination                                                              |
+| `SDIFF`     | Returns all elements in the difference between the source set and all the successive sets              |
+| `SDIFFCARD` | Returns the number of elements in the difference between the source set and all the successive sets    |
 
 ## Supported Optional Arguments
 
