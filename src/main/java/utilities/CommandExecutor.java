@@ -34,6 +34,7 @@ public class CommandExecutor {
         this.locks = locks;
     }
 
+    //Add manual expiry setters
 
     public void executeCommand(String command, DataOutputStream dos) throws IOException{
 
@@ -45,7 +46,9 @@ public class CommandExecutor {
             commandEcho(command,dos);
         } else if(("SET").equals(cmd)){
             commandSet(command, dos);
-        } else if(("GET").equals(cmd)){
+        } else if (("MSET").equals(cmd)){
+            commandMSet(command,dos);
+        }else if(("GET").equals(cmd)){
             commandGet(command,dos);
         } else if(("EXISTS").equals(cmd)){
             commandExists(command,dos);
@@ -87,6 +90,10 @@ public class CommandExecutor {
             commandSDIFF(command, dos);
         } else if(("SDIFFCARD").equals(cmd)){
             commandSDIFFCARD(command,dos);
+        } else if(("PERSIST").equals(cmd)){
+            commandPersist(command,dos);
+        } else if(("EXPIRE").equals(cmd)){
+            commandExpire(command,dos);
         }else{
             String err = "-err invalid command given!\r\n";
             dos.write(err.getBytes());
@@ -97,7 +104,7 @@ public class CommandExecutor {
     //General Commands
     public void commandPing(DataOutputStream dos) throws IOException {
 
-        dos.write(new byte[]{'+','P','O','N','G','\r','\n'});
+        dos.write("+PONG\r\n".getBytes(StandardCharsets.UTF_8));
 
     }
 
@@ -231,9 +238,11 @@ public class CommandExecutor {
         //For DB
         try(FileOutputStream fos = new FileOutputStream("DB.db")){
 
-            objectMapper.writeValue(fos, database);
-
-
+            if(!database.isEmpty()){
+                objectMapper.writeValue(fos, database);
+            } else {
+                System.out.println("No Save - Database is Empty");
+            }
 
         } catch (Exception e){
             res = "-ERR something went wrong\r\n";
@@ -244,7 +253,11 @@ public class CommandExecutor {
         //For expiry Cache
         try(FileOutputStream fos = new FileOutputStream("EXCACHE.db")){
 
-            objectMapper.writeValue(fos, expiryCache);
+            if(!expiryCache.isEmpty()){
+                objectMapper.writeValue(fos, expiryCache);
+            } else {
+                System.out.println("No Save - Empty Expiry Cache");
+            }
 
 
 
@@ -256,6 +269,120 @@ public class CommandExecutor {
 
         res = "+OK\r\n";
         dos.write(res.getBytes());
+
+    }
+
+    public void commandPersist(String command, DataOutputStream dos) throws IOException{
+
+        String[] data = command.split(" ");
+
+        if(data.length != 2){
+            dos.write("-ERR invalid operation\r\n".getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+
+        String key = data[1];
+
+        int res = 0;
+
+        ReentrantLock keyLock = getLock(key);
+
+        keyLock.lock();
+        try {
+
+            if(!(database.containsKey(key) && expiryCache.containsKey(key))){
+                dos.write(":0\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            expiryCache.remove(key);
+
+            res = 1;
+
+
+        } finally {
+            keyLock.unlock();
+        }
+
+        dos.write((":" + res + "\r\n").getBytes(StandardCharsets.UTF_8));
+
+    }
+
+
+    //Sets the expiry for a key in Seconds (EX)
+    public void commandExpire(String command, DataOutputStream dos) throws IOException{
+
+        String[] data = command.split(" ");
+
+        if(data.length != 3 && data.length != 4){
+            dos.write("-ERR invalid operation\r\n".getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+
+        String key = data[1];
+
+        String option = "";
+
+        int res = 0;
+
+        ReentrantLock keyLock = getLock(key);
+
+        keyLock.lock();
+        try {
+
+            if(data.length == 4){
+                if("NX".equals(data[3]) || "XX".equals(data[3])){
+                    option = data[3];
+                } else {
+                    dos.write("-syntax error\r\n".getBytes(StandardCharsets.UTF_8));
+                    return;
+                }
+            }
+
+            if(!database.containsKey(key)){
+                dos.write(":0\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            int time = Integer.parseInt(data[2]);
+
+            if("XX".equals(option)){
+                if(!expiryCache.containsKey(key)){
+                    dos.write("-syntax error\r\n".getBytes(StandardCharsets.UTF_8));
+                    return;
+                }
+
+                setExpiry(key,time,"EX");
+                res = 1;
+            }
+
+            if("NX".equals(option)){
+                if(expiryCache.containsKey(key)){
+                    dos.write("-syntax error\r\n".getBytes(StandardCharsets.UTF_8));
+                    return;
+                }
+
+                setExpiry(key,time,"EX");
+                res = 1;
+            }
+
+
+
+
+
+
+
+
+        } catch (NumberFormatException e){
+
+            dos.write(("-ERR " + e.getMessage()).getBytes(StandardCharsets.UTF_8));
+            return;
+
+        }  finally{
+            keyLock.unlock();
+        }
+
+        dos.write((":" + res + "\r\n").getBytes(StandardCharsets.UTF_8));
 
     }
 
@@ -316,6 +443,49 @@ public class CommandExecutor {
         dos.write(res.getBytes());
     }
 
+    //Set multiple KV pairs in one command
+    public void commandMSet(String command, DataOutputStream dos) throws IOException {
+
+        String[] data = command.split(" ");
+
+        if(!(data.length >= 3)){
+            dos.write("-syntax error\r\n".getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+
+        for (int i = 1; i < data.length; i+=2) {
+
+            System.out.println(i);
+
+            String key = data[i];
+
+            //Get lock for each key
+            ReentrantLock keyLock = getLock(key);
+            keyLock.lock();
+            try{
+
+                Value val = new Value();
+                val.setType("STRING");
+                val.setValue(data[i+1]);
+                database.put(key,val);
+
+
+            } catch (Exception e){
+
+                System.out.println("invalid syntax");
+
+            } finally {
+                keyLock.unlock();
+            }
+
+
+        }
+
+
+        dos.write("+OK\r\n".getBytes(StandardCharsets.UTF_8));
+
+    }
+
     public void commandGet(String command, DataOutputStream dos) throws IOException {
 
         String[] data = command.split(" ");
@@ -353,7 +523,6 @@ public class CommandExecutor {
             if ("STRING".equals(value.getType())) {
 
                 if (checkExpiry(key)) {
-                    expiryCache.remove(key);
                     res = "+nil\r\n";
                     dos.write(res.getBytes());
                     return;
@@ -409,7 +578,6 @@ public class CommandExecutor {
             keyLock.lock();
             try {
                 if (checkExpiry(key)) {
-                    expiryCache.remove(key);
                     dos.write("+nil\r\n".getBytes(StandardCharsets.UTF_8));
                     return;
                 }
@@ -478,7 +646,6 @@ public class CommandExecutor {
             keyLock.lock();
             try {
                 if (checkExpiry(key)) {
-                    expiryCache.remove(key);
                     dos.write("+nil\r\n".getBytes(StandardCharsets.UTF_8));
                     return;
                 }
@@ -1547,6 +1714,9 @@ public class CommandExecutor {
 
         StringBuilder res = new StringBuilder();
 
+        //Holds the difference between sets
+        HashSet<String> diffSet = new HashSet<>();
+
         for(int i = 1; i <= keySize; i++){
             keys[i - 1] = data[i];
         }
@@ -1567,7 +1737,9 @@ public class CommandExecutor {
                 return;
             }
 
-            HashSet<String> firstKeySet = val.getSet();
+            //Creates a copy of the value in the database to prevent operations from
+            // affecting the original value
+            HashSet<String> firstKeySet = new HashSet<>(val.getSet());
 
             //Any value that exists both in the firstKeySet and the otherKeySet, remove from the
             // firstKeySet
@@ -1584,6 +1756,7 @@ public class CommandExecutor {
 
                     HashSet<String> otherKeySet = temp.getSet();
 
+                    //Add all elements of the first set that do not exist in n sets
                     firstKeySet.removeAll(otherKeySet);
 
                 }
@@ -1612,34 +1785,39 @@ public class CommandExecutor {
 
     }
 
-    //Clean up, make more efficient later
     public void commandSDIFFCARD(String command, DataOutputStream dos) throws IOException {
         String[] data = command.split(" ");
 
         if(!(data.length >= 3)){
-            dos.write("-ERR invalid command execution\r\n".getBytes(StandardCharsets.UTF_8));
+            dos.write("-syntax error\r\n".getBytes(StandardCharsets.UTF_8));
             return;
         }
-
-        int numKeys = Integer.parseInt(data[1]);
-
-        int keySize = data.length - 2;
 
         int res = 0;
 
         ArrayList<String> sortedKeys = new ArrayList<>();
 
-//        //check if actual key length == set numKeys (temporary)
-//        if((2 + numKeys) != data.length){
-//            dos.write("-Synatx Error\r\n".getBytes(StandardCharsets.UTF_8));
-//            return;
-//        }
+        try{
+
+            //Number of keys to follow set in command
+            int numKeys = Integer.parseInt(data[1]);
+
+            //Actual number of keys
+            int keySize = data.length - 2;
+
+            if(numKeys != keySize){
+                dos.write("-syntax error\r\n".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+
+
+        } catch (Exception e) {
+            dos.write(("-Invalid arguments specified for command\r\n").getBytes(StandardCharsets.UTF_8));
+            return;
+        }
 
         for(int i = 2; i < data.length; i++){
-            if("LIMIT".equals(data[i])){
-                System.out.println("HIT");
-                break;
-            }
             sortedKeys.add(data[i]);
         }
 
@@ -1647,7 +1825,9 @@ public class CommandExecutor {
 
         //Set up multi-key lock
         MultiKeyLocker mkl = new MultiKeyLocker(locks);
-        mkl.lockKeys((String[])sortedKeys.toArray());
+
+            mkl.lockKeys(sortedKeys.toArray());
+
         try{
 
             String firstKey = data[2];
@@ -1664,17 +1844,10 @@ public class CommandExecutor {
                 return;
             }
 
-            HashSet<String> firstKeySet = val.getSet();
-
-            HashSet<String> diffSet = new HashSet<>();
+            HashSet<String> firstKeySet = new HashSet<>(val.getSet());
 
             //Start from the second key as the first key is the source
             for(int i = 3; i < data.length; i++){
-
-                if("LIMIT".equals(data[i])){
-                    System.out.println("HIT");
-                    break;
-                }
 
                 if(database.containsKey(data[i])){
 
@@ -1687,23 +1860,19 @@ public class CommandExecutor {
 
                     HashSet<String> otherSet = otherVal.getSet();
 
-                    for(String s : otherSet){
-                        if(firstKeySet.contains(s)){
-                            diffSet.add(s);
-                        }
-                    }
+                    System.out.println("Set size:" + otherSet.size());
+
+                    firstKeySet.removeAll(otherSet);
 
                 }
 
             }
 
-            res = diffSet.size();
+            res = firstKeySet.size();
 
         }finally {
             mkl.unlockKeys();
         }
-
-
 
         dos.write((":" + res + "\r\n").getBytes(StandardCharsets.UTF_8));
 
@@ -1835,6 +2004,7 @@ public class CommandExecutor {
                 LocalDate date = LocalDate.now();
                 Instant instant  = date.atTime(LocalTime.now()).atZone(ZoneId.of("UTC")).toInstant();
                 expire.set("EXAT:" + (instant.getEpochSecond() + expireTime));
+                System.out.println("epoch second:" + instant.getEpochSecond());
 
             } else if("PXAT".equals(option)) {
                 LocalDate date = LocalDate.now();
@@ -1852,34 +2022,43 @@ public class CommandExecutor {
     private boolean checkExpiry(String key) {
 
         String expire = expiryCache.get(key);
-        if (expire == null) {
+
+        if(expire == null){
             return false;
         }
+
         String[] data = expire.split(":");
+
+        boolean hasExpired = false;
 
         if ("EX".equals(data[0])) {
 
-            return (Long.parseLong(data[1])) < (System.currentTimeMillis() / 1000);
+            hasExpired = (Long.parseLong(data[1])) < (System.currentTimeMillis() / 1000);
 
         } else if ("PX".equals(data[0])) {
 
-            return (Long.parseLong(data[1])) < (System.currentTimeMillis());
+            hasExpired = (Long.parseLong(data[1])) < (System.currentTimeMillis());
 
         } else if ("EXAT".equals(data[0])) {
 
             LocalDate date = LocalDate.now();
             Instant instant = date.atTime(LocalTime.now()).atZone(ZoneId.of("UTC")).toInstant();
-            return (Long.parseLong(data[1])) < instant.getEpochSecond();
+            System.out.println("Epoch Seconds: " + instant.getEpochSecond());
+            hasExpired = (Long.parseLong(data[1])) < instant.getEpochSecond();
 
         } else if ("PXAT".equals(data[0])) {
 
             LocalDate date = LocalDate.now();
             Instant instant = date.atTime(LocalTime.now()).atZone(ZoneId.of("UTC")).toInstant();
-            return (Long.parseLong(data[1])) < instant.toEpochMilli();
+            hasExpired = (Long.parseLong(data[1])) < instant.toEpochMilli();
         }
 
+        if(hasExpired){
+            expiryCache.remove(key);
+            database.remove(key);
+        }
 
-        return false;
+        return hasExpired;
     }
 
     private boolean containsExpiryOption(String option){

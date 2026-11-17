@@ -15,11 +15,13 @@ public class MultiKeyLocker {
         this.keyLocks = keyLocks;
     }
 
-    public void lockKeys(String[] sortedKeys){
+    public void lockKeys(Object[] sortedKeys){
 
-        for (String sortedKey : sortedKeys) {
 
-            ReentrantLock lock = keyLocks.computeIfAbsent(sortedKey, k -> new ReentrantLock());
+        //instance of check later
+        for (Object sortedKey : sortedKeys) {
+
+            ReentrantLock lock = keyLocks.computeIfAbsent((String) sortedKey, k -> new ReentrantLock());
             lock.lock();
             System.out.println("Successfully locked");
             acquiredLocks.add(lock);
